@@ -41,12 +41,16 @@ final class SearchViewModel: ObservableObject {
         let q = raw.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { results = []; selected = 0; return }
 
-        // Always list verses one per row so the user picks an individual 구절.
         var out: [SearchResult] = []
         if let ref = parser?.parse(q) {
-            out = store.verses(bookId: ref.book.id, chapter: ref.chapter,
-                               verseStart: ref.verseStart, verseEnd: ref.verseEnd)
-                .map { singleResult($0) }
+            let verses = store.verses(bookId: ref.book.id, chapter: ref.chapter,
+                                      verseStart: ref.verseStart, verseEnd: ref.verseEnd)
+            // Explicit verse range (e.g. 요3:12-13): offer a combined, continuous
+            // insert first, then each 구절 individually.
+            if let vs = ref.verseStart, let ve = ref.verseEnd, ve != vs, verses.count > 1 {
+                out.append(combinedResult(verses))
+            }
+            out += verses.map { singleResult($0) }
         }
         if out.isEmpty {
             out = store.search(q).map { singleResult($0) }
@@ -59,6 +63,16 @@ final class SearchViewModel: ObservableObject {
         let ref = v.reference
         let insert = AppSettings.includeReference ? "\(v.text) (\(ref))" : v.text
         return SearchResult(id: "v\(v.id)", reference: ref, preview: v.text, insertText: insert)
+    }
+
+    /// One row that inserts a whole verse range as continuous text.
+    private func combinedResult(_ verses: [Verse]) -> SearchResult {
+        let first = verses.first!
+        let last = verses.last!
+        let ref = "\(first.bookName) \(first.chapter):\(first.verse)-\(last.verse)"
+        let body = verses.map(\.text).joined(separator: " ")
+        let insert = AppSettings.includeReference ? "\(body) (\(ref))" : body
+        return SearchResult(id: "range\(first.id)-\(last.id)", reference: ref, preview: body, insertText: insert)
     }
 
     // MARK: - Navigation
