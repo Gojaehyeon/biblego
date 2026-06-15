@@ -15,24 +15,29 @@ final class SearchPanel: NSObject, NSWindowDelegate {
 
     private var panel: KeyablePanel?
     private var anchorTopLeft: NSPoint = .zero
+    private var context: FocusContext?
 
     func toggle() { panel == nil ? show() : hide() }
 
     func show() {
         if panel != nil { hide() }
 
+        // Capture the frontmost app + caret BEFORE we activate ourselves, so the
+        // snapshot reflects where the user was typing.
         let context = AXCaret.capture()
+        self.context = context
+
         let model = SearchViewModel(context: context)
-        model.onClose = { [weak self] in self?.hide() }
+        model.onClose = { [weak self] in self?.dismiss(reactivate: true) }
         model.onConfirm = { [weak self] result in
-            self?.hide()
+            self?.dismiss(reactivate: false)
             TextInserter.insert(result.insertText, context: context, mode: AppSettings.insertMode)
         }
 
         let hosting = NSHostingController(rootView: SearchView(model: model))
         let panel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: 460, height: 56),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
@@ -48,12 +53,23 @@ final class SearchPanel: NSObject, NSWindowDelegate {
 
         self.panel = panel
         position(panel, near: context.caretRect)
+
+        // Activate ourselves so the search field actually receives keystrokes
+        // (including the Korean IME) regardless of which app was frontmost.
+        NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
     }
 
-    func hide() {
+    func hide() { dismiss(reactivate: false) }
+
+    /// Tears down the panel. When `reactivate` is true (user cancelled), focus is
+    /// returned to the app they were typing in; on insert the inserter does that.
+    private func dismiss(reactivate: Bool) {
+        let previous = context
         panel?.orderOut(nil)
         panel = nil
+        context = nil
+        if reactivate { previous?.app?.activate() }
     }
 
     // Re-anchor the top-left corner when SwiftUI content resizes (results load),
