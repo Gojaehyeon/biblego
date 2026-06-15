@@ -49,9 +49,19 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc sign so the Accessibility (TCC) grant sticks to a stable bundle.
-echo "▶ codesign (ad-hoc)"
-codesign --force --deep --sign - "$APP"
+# Sign with a stable identity so the Accessibility (TCC) grant persists across
+# rebuilds. Prefer a Developer ID / Apple Development cert (override with SIGN_ID);
+# fall back to ad-hoc ('-'), which resets the grant on every rebuild.
+SIGN_ID="${SIGN_ID:-}"
+if [ -z "$SIGN_ID" ]; then
+    SIGN_ID="$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application[^"]*\)".*/\1/p' | head -1)"
+fi
+if [ -z "$SIGN_ID" ]; then
+    SIGN_ID="$(security find-identity -v -p codesigning | sed -n 's/.*"\(Apple Development[^"]*\)".*/\1/p' | head -1)"
+fi
+SIGN_ID="${SIGN_ID:--}"
+echo "▶ codesign ($SIGN_ID)"
+codesign --force --deep --sign "$SIGN_ID" "$APP"
 
 echo "✅ built $APP"
 echo "   open with:  open \"$APP\""

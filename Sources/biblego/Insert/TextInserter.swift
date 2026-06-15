@@ -11,6 +11,8 @@ enum TextInserter {
     /// Inserts text into the previously-focused app. Reactivates that app first,
     /// then either sets the AX value directly or pastes via a synthesized ⌘V.
     static func insert(_ text: String, context: FocusContext, mode: InsertMode) {
+        // Bring the target app back to the front so the synthesized ⌘V (or AX
+        // write) lands in it rather than in our just-dismissed panel.
         context.app?.activate()
 
         let doInsert = {
@@ -21,7 +23,7 @@ enum TextInserter {
         }
 
         // Give the target app a moment to come back to the foreground.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: doInsert)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: doInsert)
     }
 
     // MARK: - AX direct insert

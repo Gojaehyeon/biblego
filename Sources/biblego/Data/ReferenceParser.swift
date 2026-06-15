@@ -12,12 +12,26 @@ struct ParsedReference {
 final class ReferenceParser {
     private let tokens: [(token: String, book: Book)]
 
-    // chapter, optional separator (: / 장 / whitespace) + verse (+ optional 절) + optional range
-    // chapter, then optional verse separated by ':' / '장' / whitespace, optional
-    // '절' suffix, and an optional '-'/'~' range end.
+    // chapter, then optional verse separated by ':' / '.' / '장' / whitespace, an
+    // optional '절' suffix, and an optional '-' / '~' range end. Input is normalized
+    // to ASCII first, so full-width colon '：' etc. are already mapped to ':'.
     private static let regex = try! NSRegularExpression(
-        pattern: #"^(\d+)(?:[:장\s]+(\d+)(?:절)?(?:\s*[-~]\s*(\d+))?)?"#
+        pattern: #"^(\d+)(?:[:.·장\s]+(\d+)(?:절)?(?:\s*[-~–—〜]\s*(\d+))?)?"#
     )
+
+    /// Maps full-width ASCII variants (e.g. '：', '３') and the ideographic space to
+    /// their plain ASCII equivalents, so references typed with a Korean IME parse.
+    private static func normalize(_ s: String) -> String {
+        var out = String.UnicodeScalarView()
+        for u in s.unicodeScalars {
+            switch u.value {
+            case 0xFF01...0xFF5E: out.append(Unicode.Scalar(u.value - 0xFEE0)!)
+            case 0x3000: out.append(" ")
+            default: out.append(u)
+            }
+        }
+        return String(out)
+    }
 
     init(books: [Book]) {
         var t: [(String, Book)] = []
@@ -34,7 +48,7 @@ final class ReferenceParser {
     }
 
     func parse(_ input: String) -> ParsedReference? {
-        let s = input.trimmingCharacters(in: .whitespaces)
+        let s = Self.normalize(input).trimmingCharacters(in: .whitespaces)
         guard !s.isEmpty, let firstDigit = s.firstIndex(where: { $0.isNumber }) else { return nil }
 
         let bookPart = String(s[s.startIndex..<firstDigit])
