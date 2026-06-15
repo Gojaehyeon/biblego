@@ -1,0 +1,18 @@
+# Swift / SwiftPM build artifacts
+.build/
+build/
+*.xcodeproj
+.swiftpm/
+DerivedData/
+
+# macOS
+.DS_Store
+
+# oh-my-claudecode local state
+.omc/
+
+# 개역개정(NKRV) 본문 데이터 — 대한성서공회 저작권. 재배포 금지.
+# build.py 로 로컬에서 생성/배치 후 사용하세요.
+Sources/biblego/Resources/bible.sqlite
+Tools/build_db/source/nkrv.json
+Tools/build_db/source/bible_structured.json
