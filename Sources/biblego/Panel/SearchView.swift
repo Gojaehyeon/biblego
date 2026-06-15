@@ -32,7 +32,11 @@ struct SearchView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.08))
         )
-        .onAppear { focused = true }
+        .onAppear {
+            // Defer until the panel is key so the field actually takes focus
+            // and shows the caret, letting the user type immediately.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focused = true }
+        }
     }
 
     private var resultsList: some View {

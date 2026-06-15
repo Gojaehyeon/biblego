@@ -11,10 +11,12 @@ enum AXCaret {
         var focused: CFTypeRef?
         let err = AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused)
         guard err == .success, let ref = focused else {
-            return FocusContext(app: app, element: nil, caretRect: mouseFallbackRect())
+            // No accessible caret: leave nil so the panel falls back to a
+            // predictable on-screen position instead of jumping to the mouse.
+            return FocusContext(app: app, element: nil, caretRect: nil)
         }
         let element = ref as! AXUIElement
-        let rect = caretScreenRect(of: element) ?? elementFrame(element) ?? mouseFallbackRect()
+        let rect = caretScreenRect(of: element) ?? elementFrame(element)
         return FocusContext(app: app, element: element, caretRect: rect)
     }
 
@@ -56,11 +58,6 @@ enum AXCaret {
         guard AXValueGetValue(p as! AXValue, .cgPoint, &origin),
               AXValueGetValue(s as! AXValue, .cgSize, &size) else { return nil }
         return axToCocoa(CGRect(origin: origin, size: size))
-    }
-
-    private static func mouseFallbackRect() -> CGRect {
-        let p = NSEvent.mouseLocation // already Cocoa (bottom-left) coords
-        return CGRect(x: p.x, y: p.y - 22, width: 1, height: 22)
     }
 
     /// Converts a top-left-origin screen rect (Accessibility / CoreGraphics) into

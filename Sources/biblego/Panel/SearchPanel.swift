@@ -101,7 +101,9 @@ final class SearchPanel: NSObject, NSWindowDelegate {
                 topLeft.y = caret.maxY + size.height + gap
             }
         } else {
-            topLeft = NSPoint(x: visible.midX - size.width / 2, y: visible.midY + size.height / 2)
+            // No caret available: place near the top-center (Spotlight-like).
+            topLeft = NSPoint(x: visible.midX - size.width / 2,
+                              y: visible.minY + visible.height * 0.78)
         }
 
         // Clamp horizontally and vertically into the visible frame.
