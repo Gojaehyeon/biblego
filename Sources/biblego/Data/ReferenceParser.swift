@@ -29,7 +29,8 @@ final class ReferenceParser {
             }
         }
         // Longest token first so "요한복음" wins over "요", "삼상" over partials, etc.
-        tokens = t.sorted { $0.0.count > $1.0.count }
+        // Tie-break by book order (id) so prefix matches resolve deterministically.
+        tokens = t.sorted { ($0.0.count, $1.1.id) > ($1.0.count, $0.1.id) }
     }
 
     func parse(_ input: String) -> ParsedReference? {
