@@ -43,7 +43,7 @@ struct SearchView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(model.results.enumerated()), id: \.element.id) { index, result in
+                    ForEach(Array(model.results.enumerated()), id: \.offset) { index, result in
                         ResultRow(result: result, isSelected: index == model.selected)
                             .id(index)
                             .contentShape(Rectangle())
