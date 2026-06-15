@@ -16,7 +16,6 @@ final class BibleStore {
     let dbQueue: DatabaseQueue
     private(set) var books: [Book] = []
     private(set) var booksById: [Int: Book] = [:]
-    private(set) var ftsAvailable = false
 
     enum StoreError: Error { case missingResource }
 
@@ -37,7 +36,6 @@ final class BibleStore {
 
         dbQueue = try DatabaseQueue(path: dest.path)
         try loadBooks()
-        ensureFTS()
     }
 
     private func loadBooks() throws {
@@ -49,31 +47,6 @@ final class BibleStore {
                 }
         }
         booksById = Dictionary(uniqueKeysWithValues: books.map { ($0.id, $0) })
-    }
-
-    /// Builds the FTS5 (trigram) index in the writable copy on first launch so
-    /// the tokenizer always matches the runtime SQLite. Falls back to LIKE search
-    /// if the trigram tokenizer is unavailable.
-    private func ensureFTS() {
-        do {
-            try dbQueue.write { db in
-                let exists = try Bool.fetchOne(
-                    db, sql: "SELECT 1 FROM sqlite_master WHERE type='table' AND name='verses_fts'"
-                ) ?? false
-                if !exists {
-                    try db.execute(sql: """
-                        CREATE VIRTUAL TABLE verses_fts USING fts5(
-                            text, content='verses', content_rowid='id', tokenize='trigram'
-                        )
-                        """)
-                    try db.execute(sql: "INSERT INTO verses_fts(rowid, text) SELECT id, text FROM verses")
-                }
-            }
-            ftsAvailable = true
-        } catch {
-            NSLog("[biblego] FTS unavailable, using LIKE fallback: \(error)")
-            ftsAvailable = false
-        }
     }
 
     // MARK: - Queries
@@ -93,24 +66,43 @@ final class BibleStore {
         }) ?? []
     }
 
+    /// Keyword search over verse text. The query is split on whitespace and every
+    /// term must appear (substring AND), so "여호와 목자" finds 시 23:1 even though
+    /// the words aren't adjacent. Verses that contain the whole query verbatim are
+    /// ranked first, then results follow canonical (창→계) book/chapter/verse order.
     func search(_ text: String, limit: Int = 40) -> [Verse] {
         let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard q.count >= 2 else { return [] }
+        let terms = q.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !terms.isEmpty else { return [] }
+
         return (try? dbQueue.read { db -> [Verse] in
-            if self.ftsAvailable && q.count >= 3 {
-                let match = "\"" + q.replacingOccurrences(of: "\"", with: "\"\"") + "\""
-                let sql = """
-                    SELECT v.id, v.book_id, v.chapter, v.verse, v.text
-                    FROM verses_fts f JOIN verses v ON v.id = f.rowid
-                    WHERE verses_fts MATCH ? ORDER BY rank LIMIT ?
-                    """
-                return try Row.fetchAll(db, sql: sql, arguments: [match, limit]).map(self.verse(from:))
-            } else {
-                let like = "%" + q + "%"
-                let sql = "SELECT id, book_id, chapter, verse, text FROM verses WHERE text LIKE ? LIMIT ?"
-                return try Row.fetchAll(db, sql: sql, arguments: [like, limit]).map(self.verse(from:))
+            var clauses: [String] = []
+            var args: [DatabaseValueConvertible] = []
+            // Boost verses containing the exact query (with its spaces) as a run.
+            args.append("%" + Self.escapeLike(q) + "%")
+            for term in terms {
+                clauses.append(#"text LIKE ? ESCAPE '\'"#)
+                args.append("%" + Self.escapeLike(term) + "%")
             }
+            args.append(limit)
+            let sql = """
+                SELECT id, book_id, chapter, verse, text,
+                       (text LIKE ? ESCAPE '\\') AS exact
+                FROM verses
+                WHERE \(clauses.joined(separator: " AND "))
+                ORDER BY exact DESC, book_id, chapter, verse
+                LIMIT ?
+                """
+            return try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args)).map(self.verse(from:))
         }) ?? []
+    }
+
+    /// Escapes LIKE metacharacters so user input is matched literally (ESCAPE '\').
+    private static func escapeLike(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
     }
 
     private func verse(from row: Row) -> Verse {
