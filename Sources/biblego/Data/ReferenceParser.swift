@@ -12,13 +12,6 @@ struct ParsedReference {
 final class ReferenceParser {
     private let tokens: [(token: String, book: Book)]
 
-    // chapter, then optional verse separated by ':' / '.' / '장' / whitespace, an
-    // optional '절' suffix, and an optional '-' / '~' range end. Input is normalized
-    // to ASCII first, so full-width colon '：' etc. are already mapped to ':'.
-    private static let regex = try! NSRegularExpression(
-        pattern: #"^(\d+)(?:[:.·장\s]+(\d+)(?:절)?(?:\s*[-~–—〜]\s*(\d+))?)?"#
-    )
-
     /// Maps full-width ASCII variants (e.g. '：', '３') and the ideographic space to
     /// their plain ASCII equivalents, so references typed with a Korean IME parse.
     private static func normalize(_ s: String) -> String {
@@ -68,15 +61,12 @@ final class ReferenceParser {
         return nil
     }
 
+    /// Pulls chapter / verse / range-end out of the number part. Any non-digit
+    /// (':', '：', '.', '장', '절', whitespace, '-', '~', …) acts as a separator, so
+    /// the parse is robust to whatever colon/separator a Korean IME produces.
     private func parseNumbers(_ part: String) -> (Int, Int?, Int?)? {
-        let range = NSRange(part.startIndex..<part.endIndex, in: part)
-        guard let m = Self.regex.firstMatch(in: part, range: range) else { return nil }
-
-        func group(_ i: Int) -> Int? {
-            guard let r = Range(m.range(at: i), in: part) else { return nil }
-            return Int(part[r])
-        }
-        guard let chapter = group(1) else { return nil }
-        return (chapter, group(2), group(3))
+        let nums = part.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+        guard let chapter = nums.first else { return nil }
+        return (chapter, nums.count > 1 ? nums[1] : nil, nums.count > 2 ? nums[2] : nil)
     }
 }
