@@ -6,18 +6,30 @@ enum AXCaret {
     /// caret screen rect. Degrades gracefully through a fallback chain.
     static func capture() -> FocusContext {
         let app = NSWorkspace.shared.frontmostApplication
-        let system = AXUIElementCreateSystemWide()
-
-        var focused: CFTypeRef?
-        let err = AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused)
-        guard err == .success, let ref = focused else {
-            // No accessible caret: leave nil so the panel falls back to a
-            // predictable on-screen position instead of jumping to the mouse.
+        guard let element = focusedElement(app: app) else {
             return FocusContext(app: app, element: nil, caretRect: nil)
         }
-        let element = ref as! AXUIElement
+        // Prefer the exact caret rect; fall back to the focused element's frame for
+        // apps (e.g. Notion) that don't report caret bounds.
         let rect = caretScreenRect(of: element) ?? elementFrame(element)
         return FocusContext(app: app, element: element, caretRect: rect)
+    }
+
+    /// The focused text element: try the system-wide focus first, then fall back
+    /// to the frontmost app's own AXFocusedUIElement (some apps only answer there).
+    private static func focusedElement(app: NSRunningApplication?) -> AXUIElement? {
+        let system = AXUIElementCreateSystemWide()
+        var ref: CFTypeRef?
+        if AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &ref) == .success,
+           let ref { return (ref as! AXUIElement) }
+
+        if let pid = app?.processIdentifier {
+            let appEl = AXUIElementCreateApplication(pid)
+            var aref: CFTypeRef?
+            if AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &aref) == .success,
+               let aref { return (aref as! AXUIElement) }
+        }
+        return nil
     }
 
     /// caret rect via kAXSelectedTextRange -> kAXBoundsForRange (top-left origin) -> Cocoa.
@@ -41,7 +53,12 @@ enum AXCaret {
 
         var rect = CGRect.zero
         guard AXValueGetValue(boundsValue as! AXValue, .cgRect, &rect) else { return nil }
-        if rect.isNull || (rect.origin.x == 0 && rect.origin.y == 0) { return nil }
+        // A real caret has a positive line height; apps that don't support caret
+        // bounds (e.g. Notion) hand back a degenerate rect — reject it so we fall
+        // through to the focused element's frame instead of jumping to (0,0).
+        if rect.isNull || rect.height <= 0 || (rect.origin.x == 0 && rect.origin.y == 0) {
+            return nil
+        }
         return axToCocoa(rect)
     }
 
