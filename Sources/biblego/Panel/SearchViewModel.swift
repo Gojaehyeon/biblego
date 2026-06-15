@@ -29,7 +29,7 @@ final class SearchViewModel: ObservableObject {
 
         $query
             .removeDuplicates()
-            .debounce(for: .milliseconds(110), scheduler: RunLoop.main)
+            .debounce(for: .milliseconds(90), scheduler: DispatchQueue.main)
             .sink { [weak self] q in self?.run(q) }
             .store(in: &bag)
     }
